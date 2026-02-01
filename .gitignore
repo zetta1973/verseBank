@@ -40,11 +40,13 @@ buildNumber.properties
 *.iws
 *.iml
 *.ipr
-.vscode/
 .classpath
 .project
 .settings/
 bin/
+
+# VS Code
+.vscode/
 
 # OS
 .DS_Store
