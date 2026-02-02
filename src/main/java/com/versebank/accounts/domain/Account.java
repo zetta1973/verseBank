@@ -70,13 +70,47 @@ public class Account {
         // Withdraw from this account
         withdraw(transaction);
         
-        // Deposit to target account (using internal method to avoid event duplication)
-        targetAccount.balance = targetAccount.balance.add(Balance.of(transaction.getAmount()));
-        targetAccount.transactions.add(transaction);
+        // Deposit to target account using public method
+        targetAccount.receiveTransfer(transaction);
+    }
+
+    public void receiveTransfer(Transaction transaction) {
+        if (transaction == null) throw new IllegalArgumentException("Transaction cannot be null");
+        
+        this.balance = balance.add(Balance.of(transaction.getAmount()));
+        this.transactions.add(transaction);
+        
+        // Emit domain event for received money
+        domainEvents.add(new MoneyReceivedEvent(transaction.getAmount(), getBalance().getAmount()));
     }
 
     public boolean hasSufficientBalance(java.math.BigDecimal amount) {
         return balance.isGreaterThanOrEqual(Balance.of(amount));
+    }
+
+    /**
+     * Calcula la comisión por transferencia basada en el tipo de cuenta
+     */
+    public java.math.BigDecimal calculateTransferFee() {
+        return accountType.calculateTransferFee(balance.getAmount());
+    }
+
+    /**
+     * Valida si se puede transferir a otra cuenta
+     */
+    public boolean canTransferTo(Account targetAccount, java.math.BigDecimal amount) {
+        if (targetAccount == null || amount == null) {
+            return false;
+        }
+        
+        // No se puede transferir a la misma cuenta
+        if (this.id.equals(targetAccount.getId())) {
+            return false;
+        }
+        
+        // Verificar saldo suficiente incluyendo comisión
+        java.math.BigDecimal totalAmount = amount.add(calculateTransferFee());
+        return hasSufficientBalance(totalAmount);
     }
 
     public List<Transaction> getTransactions() {
@@ -118,6 +152,20 @@ public class Account {
 
         public MoneyWithdrawnEvent(java.math.BigDecimal amount, java.math.BigDecimal newBalance) {
             super("MoneyWithdrawn");
+            this.amount = amount;
+            this.newBalance = newBalance;
+        }
+
+        public java.math.BigDecimal getAmount() { return amount; }
+        public java.math.BigDecimal getNewBalance() { return newBalance; }
+    }
+
+    private static class MoneyReceivedEvent extends DomainEvent {
+        private final java.math.BigDecimal amount;
+        private final java.math.BigDecimal newBalance;
+
+        public MoneyReceivedEvent(java.math.BigDecimal amount, java.math.BigDecimal newBalance) {
+            super("MoneyReceived");
             this.amount = amount;
             this.newBalance = newBalance;
         }

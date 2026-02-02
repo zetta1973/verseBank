@@ -1,36 +1,45 @@
 package com.versebank.accounts.application;
 
-import com.versebank.accounts.application.port.in.TransferMoneyUseCase;
 import com.versebank.accounts.application.port.out.AccountRepository;
 import com.versebank.accounts.application.port.out.NotificationPort;
 import com.versebank.accounts.domain.Account;
-import com.versebank.accounts.domain.AccountDomainService;
+
 import com.versebank.accounts.domain.valueobjects.Transaction;
 import com.versebank.accounts.domain.exceptions.InsufficientFundsException;
+import com.versebank.accounts.domain.events.DomainEvent;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.stereotype.Service;
 
 /**
  * Servicio de aplicación que implementa los casos de uso para transferencias de dinero
  */
-public class TransferMoneyService implements TransferMoneyUseCase {
+@Service
+public class TransferMoneyService implements com.versebank.accounts.application.port.in.TransferMoneyUseCase {
     
     private final AccountRepository accountRepository;
     private final NotificationPort notificationPort;
-    private final AccountDomainService accountDomainService;
+
+    private final ApplicationEventPublisher eventPublisher;
     
-    public TransferMoneyService(AccountRepository accountRepository, NotificationPort notificationPort) {
+    public TransferMoneyService(AccountRepository accountRepository, NotificationPort notificationPort, ApplicationEventPublisher eventPublisher) {
         if (accountRepository == null) {
             throw new NullPointerException("AccountRepository cannot be null");
         }
         if (notificationPort == null) {
             throw new NullPointerException("NotificationPort cannot be null");
         }
+        if (eventPublisher == null) {
+            throw new NullPointerException("ApplicationEventPublisher cannot be null");
+        }
         this.accountRepository = accountRepository;
         this.notificationPort = notificationPort;
-        this.accountDomainService = new AccountDomainService();
+
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -50,8 +59,13 @@ public class TransferMoneyService implements TransferMoneyUseCase {
         Account sourceAccount = sourceOpt.get();
         Account targetAccount = targetOpt.get();
         
-        // Calculate transfer fee using domain service
-        BigDecimal transferFee = accountDomainService.calculateTransferFee(sourceAccount.getAccountType(), amount);
+        // Validar transferencia usando lógica de dominio
+        if (!sourceAccount.canTransferTo(targetAccount, amount)) {
+            throw new InsufficientFundsException("Transfer not allowed: insufficient funds or invalid target");
+        }
+        
+        // Calculate transfer fee using domain logic
+        BigDecimal transferFee = sourceAccount.calculateTransferFee();
         
         Transaction sourceTransaction = Transaction.create(amount, description, Transaction.TransactionType.TRANSFER);
         
@@ -65,18 +79,22 @@ public class TransferMoneyService implements TransferMoneyUseCase {
         // Deposit full amount to target account (receiver gets full amount)
         Transaction targetTransaction = Transaction.create(amount, description, Transaction.TransactionType.TRANSFER);
         targetAccount.deposit(targetTransaction);
-        
+
+        // Publicar eventos
+        publishAndClearDomainEvents(sourceAccount);
+        publishAndClearDomainEvents(targetAccount);
+
         // Save both accounts
         accountRepository.save(sourceAccount);
         accountRepository.save(targetAccount);
-        
+
         // Send notifications
         String sourceDescription = "Transfer of " + amount + " to account " + targetAccountId;
         if (transferFee.compareTo(BigDecimal.ZERO) > 0) {
             sourceDescription += " (fee: " + transferFee + ")";
         }
         notificationPort.notifyAccountOperation(sourceAccountId, "TRANSFER_OUT", sourceDescription);
-        notificationPort.notifyAccountOperation(targetAccountId, "TRANSFER_IN", 
+        notificationPort.notifyAccountOperation(targetAccountId, "TRANSFER_IN",
             "Transfer of " + amount + " from account " + sourceAccountId);
     }
 
@@ -86,50 +104,56 @@ public class TransferMoneyService implements TransferMoneyUseCase {
         if (accountOpt.isEmpty()) {
             throw new IllegalArgumentException("Account not found: " + accountId);
         }
-        
+
         Account account = accountOpt.get();
         Transaction transaction = Transaction.create(amount, description, Transaction.TransactionType.DEPOSIT);
-        
+
         account.deposit(transaction);
+
+        // Publicar eventos
+        publishAndClearDomainEvents(account);
+
         accountRepository.save(account);
-        
-        notificationPort.notifyAccountOperation(accountId, "DEPOSIT", 
+
+        notificationPort.notifyAccountOperation(accountId, "DEPOSIT",
             "Deposit of " + amount + " - " + description);
     }
 
     @Override
-    public void withdrawMoney(String accountId, BigDecimal amount, String description) 
+    public void withdrawMoney(String accountId, BigDecimal amount, String description)
             throws InsufficientFundsException {
-        
+
         Optional<Account> accountOpt = accountRepository.findById(accountId);
         if (accountOpt.isEmpty()) {
             throw new IllegalArgumentException("Account not found: " + accountId);
         }
-        
+
         Account account = accountOpt.get();
         Transaction transaction = Transaction.create(amount, description, Transaction.TransactionType.WITHDRAWAL);
-        
+
         account.withdraw(transaction);
+
+        // Publicar eventos
+        publishAndClearDomainEvents(account);
+
         accountRepository.save(account);
-        
-        notificationPort.notifyAccountOperation(accountId, "WITHDRAWAL", 
+
+        notificationPort.notifyAccountOperation(accountId, "WITHDRAWAL",
             "Withdrawal of " + amount + " - " + description);
-    }
-
-    @Override
-    public Optional<Account> getAccount(String accountId) {
-        return accountRepository.findById(accountId);
-    }
-
-    @Override
-    public List<Transaction> getAccountTransactions(String accountId) {
-        Optional<Account> accountOpt = accountRepository.findById(accountId);
-        return accountOpt.map(Account::getTransactions).orElse(List.of());
     }
 
     @Override
     public boolean hasSufficientBalance(String accountId, BigDecimal amount) {
         Optional<Account> accountOpt = accountRepository.findById(accountId);
         return accountOpt.map(account -> account.hasSufficientBalance(amount)).orElse(false);
+    }
+
+    /**
+     * Método helper para publicar y limpiar eventos de dominio (DRY)
+     */
+    private void publishAndClearDomainEvents(Account account) {
+        List<DomainEvent> domainEvents = new ArrayList<>(account.getDomainEvents());
+        domainEvents.forEach(eventPublisher::publishEvent);
+        account.clearDomainEvents();
     }
 }

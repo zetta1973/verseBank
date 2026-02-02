@@ -1,6 +1,8 @@
 package com.versebank.accounts.infrastructure.web;
 
 import com.versebank.accounts.application.port.in.TransferMoneyUseCase;
+import com.versebank.accounts.application.port.in.AccountQueryPort;
+import com.versebank.accounts.application.port.in.AccountSummary;
 import com.versebank.accounts.domain.exceptions.InsufficientFundsException;
 import com.versebank.accounts.infrastructure.web.dto.TransferRequest;
 import com.versebank.accounts.infrastructure.web.dto.AccountResponse;
@@ -18,9 +20,11 @@ import java.util.Optional;
 public class AccountController {
     
     private final TransferMoneyUseCase transferMoneyUseCase;
+    private final AccountQueryPort accountQueryPort;
 
-    public AccountController(TransferMoneyUseCase transferMoneyUseCase) {
+    public AccountController(TransferMoneyUseCase transferMoneyUseCase, AccountQueryPort accountQueryPort) {
         this.transferMoneyUseCase = transferMoneyUseCase;
+        this.accountQueryPort = accountQueryPort;
     }
 
     @PostMapping("/transfer")
@@ -68,24 +72,24 @@ public class AccountController {
 
     @GetMapping("/{accountId}")
     public ResponseEntity<AccountResponse> getAccount(@PathVariable String accountId) {
-        Optional<AccountResponse> accountOpt = transferMoneyUseCase.getAccount(accountId)
-                .map(account -> new AccountResponse(
-                    account.getId().getValue(),
-                    account.getCustomerId(),
-                    account.getAccountType(),
-                    account.getBalance().getAmount(),
-                    java.time.LocalDateTime.now(), // Placeholder
-                    java.time.LocalDateTime.now() // Placeholder
-                ));
+        Optional<AccountSummary> accountOpt = accountQueryPort.findByAccountId(accountId);
         
-        return accountOpt.map(ResponseEntity::ok)
+        return accountOpt.map(account -> new AccountResponse(
+                    account.getAccountId(),
+                    account.getCustomerId(),
+                    com.versebank.accounts.domain.valueobjects.AccountType.valueOf(account.getAccountType()),
+                    account.getBalance(),
+                    java.time.LocalDateTime.now(),
+                    java.time.LocalDateTime.now()
+                ))
+                .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/{accountId}/balance")
     public ResponseEntity<BigDecimal> getBalance(@PathVariable String accountId) {
-        Optional<BigDecimal> balanceOpt = transferMoneyUseCase.getAccount(accountId)
-                .map(account -> account.getBalance().getAmount());
+        Optional<BigDecimal> balanceOpt = accountQueryPort.findByAccountId(accountId)
+                .map(AccountSummary::getBalance);
         
         return balanceOpt.map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());

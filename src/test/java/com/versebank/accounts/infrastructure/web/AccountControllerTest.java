@@ -1,6 +1,8 @@
 package com.versebank.accounts.infrastructure.web;
 
 import com.versebank.accounts.application.port.in.TransferMoneyUseCase;
+import com.versebank.accounts.application.port.in.AccountQueryPort;
+import com.versebank.accounts.application.port.in.AccountSummary;
 import com.versebank.accounts.domain.Account;
 import com.versebank.accounts.domain.AccountId;
 import com.versebank.accounts.domain.valueobjects.AccountType;
@@ -37,12 +39,15 @@ class AccountControllerTest {
     @Mock
     private TransferMoneyUseCase transferMoneyUseCase;
     
+    @Mock
+    private AccountQueryPort accountQueryPort;
+    
     private AccountController accountController;
     private Account testAccount;
     
     @BeforeEach
     void setUp() {
-        accountController = new AccountController(transferMoneyUseCase);
+        accountController = new AccountController(transferMoneyUseCase, accountQueryPort);
         testAccount = Account.create("customer-123", CHECKING, Balance.of(BigDecimal.valueOf(1000)));
     }
     
@@ -197,9 +202,9 @@ class AccountControllerTest {
     void shouldReturnAccountWhenFound() {
         // Given
         String accountId = "account-123";
-        Account account = new Account(AccountId.of(accountId), "customer-456", SAVINGS, Balance.of(BigDecimal.valueOf(750)));
+        AccountSummary accountSummary = new AccountSummary(accountId, "customer-456", "SAVINGS", BigDecimal.valueOf(750));
         
-        when(transferMoneyUseCase.getAccount(accountId)).thenReturn(Optional.of(account));
+        when(accountQueryPort.findByAccountId(accountId)).thenReturn(Optional.of(accountSummary));
         
         // When
         ResponseEntity<AccountResponse> response = accountController.getAccount(accountId);
@@ -220,7 +225,7 @@ class AccountControllerTest {
         // Given
         String accountId = "non-existent-account";
         
-        when(transferMoneyUseCase.getAccount(accountId)).thenReturn(Optional.empty());
+        when(accountQueryPort.findByAccountId(accountId)).thenReturn(Optional.empty());
         
         // When
         ResponseEntity<AccountResponse> response = accountController.getAccount(accountId);
@@ -234,9 +239,9 @@ class AccountControllerTest {
     void shouldReturnBalanceWhenAccountFound() {
         // Given
         String accountId = "account-123";
-        Account account = Account.create("customer-456", CHECKING, Balance.of(BigDecimal.valueOf(1250.75)));
+        AccountSummary accountSummary = new AccountSummary(accountId, "customer-456", "CHECKING", BigDecimal.valueOf(1250.75));
         
-        when(transferMoneyUseCase.getAccount(accountId)).thenReturn(Optional.of(account));
+        when(accountQueryPort.findByAccountId(accountId)).thenReturn(Optional.of(accountSummary));
         
         // When
         ResponseEntity<BigDecimal> response = accountController.getBalance(accountId);
@@ -251,7 +256,7 @@ class AccountControllerTest {
         // Given
         String accountId = "non-existent-account";
         
-        when(transferMoneyUseCase.getAccount(accountId)).thenReturn(Optional.empty());
+        when(accountQueryPort.findByAccountId(accountId)).thenReturn(Optional.empty());
         
         // When
         ResponseEntity<BigDecimal> response = accountController.getBalance(accountId);

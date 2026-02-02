@@ -1,11 +1,25 @@
 package com.versebank.accounts.infrastructure.web.dto;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 
 public class TransferRequest {
+    
+    @NotBlank(message = "Source account ID is required")
     private String sourceAccountId;
+    
+    @NotBlank(message = "Target account ID is required")
     private String targetAccountId;
+    
+    @NotNull(message = "Amount is required")
+    @Positive(message = "Amount must be positive")
+    @DecimalMin(value = "0.01", message = "Amount must be at least 0.01")
     private BigDecimal amount;
+    
+    @NotBlank(message = "Description is required")
     private String description;
 
     protected TransferRequest() {}

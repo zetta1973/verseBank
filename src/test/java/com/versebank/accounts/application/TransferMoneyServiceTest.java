@@ -1,9 +1,11 @@
 package com.versebank.accounts.application;
 
+import com.versebank.accounts.application.port.in.AccountSummary;
 import com.versebank.accounts.application.port.out.AccountRepository;
 import com.versebank.accounts.application.port.out.NotificationPort;
 import com.versebank.accounts.domain.Account;
 import com.versebank.accounts.domain.AccountId;
+import org.springframework.context.ApplicationEventPublisher;
 import com.versebank.accounts.domain.valueobjects.AccountType;
 import com.versebank.accounts.domain.valueobjects.Balance;
 import com.versebank.accounts.domain.valueobjects.Transaction;
@@ -40,6 +42,9 @@ class TransferMoneyServiceTest {
     @Mock
     private NotificationPort notificationPort;
     
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+    
     private TransferMoneyService transferMoneyService;
     
     private Account sourceAccount;
@@ -49,7 +54,7 @@ class TransferMoneyServiceTest {
     
     @BeforeEach
     void setUp() {
-        transferMoneyService = new TransferMoneyService(accountRepository, notificationPort);
+        transferMoneyService = new TransferMoneyService(accountRepository, notificationPort, eventPublisher);
         
         sourceAccountId = AccountId.of("source-account-123");
         targetAccountId = AccountId.of("target-account-456");
@@ -263,75 +268,6 @@ class TransferMoneyServiceTest {
     }
     
     @Test
-    @DisplayName("Should return account when found")
-    void shouldReturnAccountWhenFound() {
-        // Given
-        String accountId = "account-123";
-        Account expectedAccount = Account.create("customer-1", CHECKING, Balance.of(BigDecimal.valueOf(1000)));
-        
-        when(accountRepository.findById(accountId)).thenReturn(Optional.of(expectedAccount));
-        
-        // When
-        Optional<Account> result = transferMoneyService.getAccount(accountId);
-        
-        // Then
-        assertThat(result).isPresent();
-        assertThat(result.get()).isEqualTo(expectedAccount);
-        verify(accountRepository).findById(accountId);
-    }
-    
-    @Test
-    @DisplayName("Should return empty when account not found")
-    void shouldReturnEmptyWhenAccountNotFound() {
-        // Given
-        String accountId = "non-existent-account";
-        
-        when(accountRepository.findById(accountId)).thenReturn(Optional.empty());
-        
-        // When
-        Optional<Account> result = transferMoneyService.getAccount(accountId);
-        
-        // Then
-        assertThat(result).isNotPresent();
-        verify(accountRepository).findById(accountId);
-    }
-    
-    @Test
-    void shouldReturnAccountTransactions() {
-        // Given
-        String accountId = "account-123";
-        Account account = Account.create("customer-1", CHECKING, Balance.of(BigDecimal.valueOf(1000)));
-        
-        // Add some transactions
-        account.deposit(Transaction.create(BigDecimal.valueOf(200), "Deposit", DEPOSIT));
-        account.deposit(Transaction.create(BigDecimal.valueOf(300), "Another deposit", DEPOSIT));
-        
-        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
-        
-        // When
-        var transactions = transferMoneyService.getAccountTransactions(accountId);
-        
-        // Then
-        assertThat(transactions).hasSize(2);
-        verify(accountRepository).findById(accountId);
-    }
-    
-    @Test
-    void shouldReturnEmptyListWhenAccountNotFound() {
-        // Given
-        String accountId = "non-existent-account";
-        
-        when(accountRepository.findById(accountId)).thenReturn(Optional.empty());
-        
-        // When
-        var transactions = transferMoneyService.getAccountTransactions(accountId);
-        
-        // Then
-        assertThat(transactions).isEmpty();
-        verify(accountRepository).findById(accountId);
-    }
-    
-    @Test
     @DisplayName("Should check sufficient balance")
     void shouldCheckSufficientBalance() {
         // Given
@@ -387,11 +323,15 @@ class TransferMoneyServiceTest {
     void shouldHandleNullParametersInConstructor() {
         // When & Then
         assertThatThrownBy(() -> 
-            new TransferMoneyService(null, notificationPort)
+            new TransferMoneyService(null, notificationPort, eventPublisher)
         ).isInstanceOf(NullPointerException.class);
         
         assertThatThrownBy(() -> 
-            new TransferMoneyService(accountRepository, null)
+            new TransferMoneyService(accountRepository, null, eventPublisher)
+        ).isInstanceOf(NullPointerException.class);
+        
+        assertThatThrownBy(() -> 
+            new TransferMoneyService(accountRepository, notificationPort, null)
         ).isInstanceOf(NullPointerException.class);
     }
     

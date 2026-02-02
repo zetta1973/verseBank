@@ -1,5 +1,6 @@
 package com.versebank.accounts.infrastructure.persistence.mappers;
 
+import com.versebank.accounts.application.port.in.AccountSummary;
 import com.versebank.accounts.domain.Account;
 import com.versebank.accounts.domain.AccountId;
 import com.versebank.accounts.domain.valueobjects.AccountType;
@@ -52,5 +53,21 @@ public class AccountMapper {
         jpaEntity.setAccountType(domain.getAccountType());
         jpaEntity.setBalance(domain.getBalance().getAmount());
         jpaEntity.setUpdatedAt(LocalDateTime.now());
+    }
+    
+    /**
+     * Convierte una entidad JPA a un resumen de cuenta (DTO)
+     */
+    public static AccountSummary toSummary(AccountJpaEntity jpaEntity) {
+        if (jpaEntity == null) {
+            return null;
+        }
+        
+        return new AccountSummary(
+            jpaEntity.getId(),
+            jpaEntity.getCustomerId(),
+            jpaEntity.getAccountType().name(),
+            jpaEntity.getBalance()
+        );
     }
 }
